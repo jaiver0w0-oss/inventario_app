@@ -48,6 +48,7 @@ class SheetsService {
     required String descripcion,
     required int cantidadActual,
     required int cantidadRequerida,
+    required String unidad, // <-- Parámetro agregado
     String? imagenBase64,
   }) async {
     try {
@@ -60,6 +61,7 @@ class SheetsService {
           'descripcion': descripcion,
           'cantidadActual': cantidadActual,
           'cantidadRequerida': cantidadRequerida,
+          'unidad': unidad
           'imagenBase64': imagenBase64 ?? '',
         }),
       );

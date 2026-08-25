@@ -177,38 +177,42 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
     }
   }
 
-  void _mostrarFormularioMaterial() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => FormularioMaterialModal(
-        onGuardar: (nombre, desc, stockActual, stockReq, imagenBase64) async {
-          Navigator.pop(context);
-          setState(() => _cargando = true);
+  // En _PantallaPrincipalState:
 
-          bool exito = await _sheetsService.registrarMaterial(
-            nombre: nombre,
-            descripcion: desc,
-            cantidadActual: stockActual,
-            cantidadRequerida: stockReq,
-            imagenBase64: imagenBase64,
-          );
+void _mostrarFormularioMaterial() {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) => FormularioMaterialModal(
+      // Actualizamos la firma del callback agregando 'unidad'
+      onGuardar: (nombre, desc, stockActual, stockReq, unidad, imagenBase64) async {
+        Navigator.pop(context);
+        setState(() => _cargando = true);
 
-          if (exito) {
-            await _cargarDatosCompletos();
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Material y foto guardados correctamente')),
-              );
-            }
+        bool exito = await _sheetsService.registrarMaterial(
+          nombre: nombre,
+          descripcion: desc,
+          cantidadActual: stockActual,
+          cantidadRequerida: stockReq,
+          unidad: unidad, // <-- Pasar aquí la unidad al servicio
+          imagenBase64: imagenBase64,
+        );
+
+        if (exito) {
+          await _cargarDatosCompletos();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Material guardado correctamente')),
+            );
           }
-        },
-      ),
-    );
-  }
+        }
+      },
+    ),
+  );
+}
 
   void _mostrarFormularioMovimiento() {
     if (_materiales.isEmpty || _personal.isEmpty) {
@@ -391,8 +395,10 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
     );
   }
 
+  // En _buildListaMateriales():
+
   Widget _buildListaMateriales() {
-    if (_materiales.isEmpty) return const Center(child: Text('No hay materiales en Hoja 8'));
+    if (_materiales.isEmpty) return const Center(child: Text('No hay materiales registrados'));
 
     return ListView.builder(
       padding: const EdgeInsets.all(8),
@@ -401,6 +407,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
         final item = _materiales[index];
         final stock = int.tryParse(item['Cantidad_Actual'] ?? '0') ?? 0;
         final requerida = item['Cantidad_Requerida'] ?? '0';
+        final unidad = item['Unidad'] ?? ''; // <-- Obtener valor de la unidad
         final imagenUrl = item['Imagen_URL'] ?? '';
 
         return Card(
@@ -416,15 +423,9 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
                       width: 50,
                       height: 50,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => CircleAvatar(
-                        backgroundColor: stock <= 0 ? Colors.red.shade100 : Colors.green.shade100,
-                        child: Icon(Icons.inventory_2_outlined, color: stock <= 0 ? Colors.red : Colors.green.shade800),
-                      ),
+                      errorBuilder: (context, error, stackTrace) => _buildAvatarFallback(stock),
                     )
-                  : CircleAvatar(
-                      backgroundColor: stock <= 0 ? Colors.red.shade100 : Colors.green.shade100,
-                      child: Icon(Icons.inventory_2_outlined, color: stock <= 0 ? Colors.red : Colors.green.shade800),
-                    ),
+                  : _buildAvatarFallback(stock),
             ),
             title: Text(item['Nombre'] ?? 'Sin Nombre', style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text(item['Descripcion'] ?? 'Sin descripción'),
@@ -432,8 +433,18 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text('Stock: $stock', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: stock <= 0 ? Colors.red : Colors.black)),
-                Text('Requerido: $requerida', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text(
+                  'Stock: $stock ${unidad.isNotEmpty ? unidad : ''}', // <-- Muestra la unidad junto al Stock
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: stock <= 0 ? Colors.red : Colors.black,
+                  ),
+                ),
+                Text(
+                  'Req: $requerida ${unidad.isNotEmpty ? unidad : ''}', // <-- Muestra la unidad junto al requerimiento
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ],
             ),
           ),
@@ -505,7 +516,15 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
 }
 
 class FormularioMaterialModal extends StatefulWidget {
-  final Function(String nombre, String descripcion, int stockActual, int stockRequerido, String? imagenBase64) onGuardar;
+  // 1. Agregar 'String unidad' al callback onGuardar
+  final Function(
+    String nombre, 
+    String descripcion, 
+    int stockActual, 
+    int stockRequerida, 
+    String unidad, 
+    String? imagenBase64
+  ) onGuardar;
 
   const FormularioMaterialModal({super.key, required this.onGuardar});
 
@@ -519,9 +538,40 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
   final _descCtrl = TextEditingController();
   final _stockActualCtrl = TextEditingController(text: '0');
   final _stockReqCtrl = TextEditingController(text: '0');
-  
+
+  // 2. Variable para almacenar la unidad seleccionada
+  String _unidadSeleccionada = 'Unidades';
+
+  // Lista de unidades comunes (puedes ajustar según tus necesidades)
+  final List<String> _opcionesUnidad = [
+    'Und',
+    'Rollos',
+    'Caja',
+    'Pares',
+    'Laminas',
+    'Sacos',
+    'Litros',
+    'Galon',
+    'Atados',
+    'metros',
+    'm2',
+    'm3',
+    'Serv',
+    'Pza',
+    'Bolsa',
+  ];
+
   Uint8List? _imagenBytes;
   String? _imagenBase64;
+
+  @override
+  void dispose() {
+    _nombreCtrl.dispose();
+    _descCtrl.dispose();
+    _stockActualCtrl.dispose();
+    _stockReqCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _seleccionarImagen(ImageSource origen) async {
     final picker = ImagePicker();
@@ -554,7 +604,6 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
             children: [
               const Text('Agregar Nuevo Material', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 15),
-              
               Center(
                 child: Column(
                   children: [
@@ -605,6 +654,23 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
                 decoration: const InputDecoration(labelText: 'Descripción / Especificaciones', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 12),
+
+              // 3. Dropdown para seleccionar la unidad de medida
+              DropdownButtonFormField<String>(
+                value: _unidadSeleccionada,
+                decoration: const InputDecoration(
+                  labelText: 'Unidad de Medida',
+                  border: OutlineInputBorder(),
+                ),
+                items: _opcionesUnidad.map((u) {
+                  return DropdownMenuItem(value: u, child: Text(u));
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _unidadSeleccionada = val);
+                },
+              ),
+              const SizedBox(height: 12),
+
               Row(
                 children: [
                   Expanded(
@@ -612,7 +678,7 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
                       controller: _stockActualCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Stock Inicial', border: OutlineInputBorder()),
-                      validator: (v) => v == null || int.tryParse(v) == null ? ' Inválido' : null,
+                      validator: (v) => v == null || int.tryParse(v) == null ? 'Inválido' : null,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -621,7 +687,7 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
                       controller: _stockReqCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Cantidad Requerida', border: OutlineInputBorder()),
-                      validator: (v) => v == null || int.tryParse(v) == null ? ' Inválido' : null,
+                      validator: (v) => v == null || int.tryParse(v) == null ? 'Inválido' : null,
                     ),
                   ),
                 ],
@@ -640,6 +706,7 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
                       _descCtrl.text.trim(),
                       int.parse(_stockActualCtrl.text),
                       int.parse(_stockReqCtrl.text),
+                      _unidadSeleccionada, // <-- Se pasa la unidad seleccionada
                       _imagenBase64,
                     );
                   }
