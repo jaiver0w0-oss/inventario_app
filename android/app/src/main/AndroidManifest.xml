@@ -2,6 +2,11 @@
     <!-- PERMISO DE INTERNET REQUERIDO PARA CONECTAR A GOOGLE SHEETS -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- PERMISOS PARA CÁMARA Y GALERÍA (AGREGADOS AQUÍ) -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+
     <application
         android:label="inventario_app"
         android:name="${applicationName}"
