@@ -61,7 +61,7 @@ class SheetsService {
           'descripcion': descripcion,
           'cantidadActual': cantidadActual,
           'cantidadRequerida': cantidadRequerida,
-          'unidad': unidad
+          'unidad': unidad,
           'imagenBase64': imagenBase64 ?? '',
         }),
       );

@@ -453,6 +453,16 @@ void _mostrarFormularioMaterial() {
     );
   }
 
+  Widget _buildAvatarFallback(int stock) {
+    return CircleAvatar(
+      backgroundColor: stock <= 0 ? Colors.red.shade100 : Colors.teal.shade100,
+      child: Icon(
+        Icons.inventory_2,
+        color: stock <= 0 ? Colors.red : Colors.teal.shade800,
+      ),
+    );
+  }
+
   Widget _buildListaMovimientos() {
     if (_movimientos.isEmpty) return const Center(child: Text('No hay registros de movimientos'));
 
