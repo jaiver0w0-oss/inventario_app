@@ -7,7 +7,7 @@ class SheetsService {
   Future<List<Map<String, String>>> obtenerMateriales() async {
     try {
       final response = await http.get(Uri.parse('$scriptUrl?action=getMateriales'));
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 302) {
         final List<dynamic> data = json.decode(response.body);
         return data.map((item) => Map<String, String>.from(item)).toList();
       }
@@ -20,7 +20,7 @@ class SheetsService {
   Future<List<Map<String, String>>> obtenerMovimientos() async {
     try {
       final response = await http.get(Uri.parse('$scriptUrl?action=getMovimientos'));
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 302) {
         final List<dynamic> data = json.decode(response.body);
         return data.map((item) => Map<String, String>.from(item)).toList();
       }
@@ -33,7 +33,7 @@ class SheetsService {
   Future<List<Map<String, String>>> obtenerPersonal() async {
     try {
       final response = await http.get(Uri.parse('$scriptUrl?action=getPersonal'));
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 302) {
         final List<dynamic> data = json.decode(response.body);
         return data.map((item) => Map<String, String>.from(item)).toList();
       }
@@ -53,6 +53,7 @@ class SheetsService {
     try {
       final response = await http.post(
         Uri.parse(scriptUrl),
+        headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'action': 'addMaterial',
           'nombre': nombre,
@@ -63,7 +64,7 @@ class SheetsService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 302) {
         final res = json.decode(response.body);
         return res['status'] == 'success';
       }
@@ -73,7 +74,6 @@ class SheetsService {
     return false;
   }
 
-  // MÉTODO QUE FALTABA:
   Future<bool> actualizarFotoMaterial({
     required String nombre,
     required String imagenBase64,
@@ -81,6 +81,7 @@ class SheetsService {
     try {
       final response = await http.post(
         Uri.parse(scriptUrl),
+        headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'action': 'updateFotoMaterial',
           'nombre': nombre,
@@ -88,7 +89,7 @@ class SheetsService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 302) {
         final res = json.decode(response.body);
         return res['status'] == 'success';
       }
@@ -108,6 +109,7 @@ class SheetsService {
     try {
       final response = await http.post(
         Uri.parse(scriptUrl),
+        headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'action': 'addMovimiento',
           'materialNombre': materialNombre,
@@ -118,7 +120,7 @@ class SheetsService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 302) {
         final res = json.decode(response.body);
         return res['status'] == 'success';
       }
