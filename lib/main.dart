@@ -1,8 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart'; 
+import 'package:docx_template/docx_template.dart';
 import 'sheets_service.dart';
 
 
@@ -1145,8 +1149,8 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
   final _formKey = GlobalKey<FormState>();
   final _solicitanteCtrl = TextEditingController();
   final _cantidadSolicitadaCtrl = TextEditingController();
+  bool _generandoDoc = false;
 
-  // Lista de justificaciones por Acción Específica
   final List<String> _opcionesJustificacion = [
     'Código de Acción Específica N°001: Servicios del Cementerio (Inhumación, Exhumación, Cremación y Servicios de capilla)',
     'Código de Acción Específica N°002: (Construcción de bóvedas, tapas, bases de cemento y cuñas)',
@@ -1172,7 +1176,6 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
     }
   }
 
-  // Filtrar los últimos 5 movimientos del material
   String _obtenerTextoUltimosMovimientos(String nombreMaterial) {
     final movsMaterial = widget.listaMovimientos.where((m) {
       final matNombre = m['Material'] ?? '';
@@ -1183,7 +1186,6 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
       return 'Sin movimientos registrados';
     }
 
-    // Tomar los últimos 5 (los más recientes suelen estar al final del listado)
     final ultimosMovs = movsMaterial.reversed.take(5).toList();
     final StringBuffer sb = StringBuffer();
 
@@ -1197,7 +1199,8 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
     return sb.toString().trim();
   }
 
-  void _generarYEnviarInforme() async {
+  // 1. Enviar texto plano por WhatsApp
+  void _generarYEnviarInformeTexto() async {
     if (!_formKey.currentState!.validate()) return;
 
     final nombreMat = widget.material['Nombre'] ?? 'N/A';
@@ -1206,7 +1209,6 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
     final unidad = widget.material['Unidad_Medida'] ?? widget.material['Unidad'] ?? '';
     final historialTexto = _obtenerTextoUltimosMovimientos(nombreMat);
 
-    // Construcción del informe para WhatsApp
     final String mensaje = '''
 📋 *SOLICITUD DE MATERIAL*
 ----------------------------------
@@ -1229,12 +1231,74 @@ _Generado desde el Sistema de Inventario_
     Navigator.pop(context);
 
     if (_imagenAdjunta != null) {
-      await Share.shareXFiles(
-        [_imagenAdjunta!],
-        text: mensaje,
-      );
+      await Share.shareXFiles([_imagenAdjunta!], text: mensaje);
     } else {
       await Share.share(mensaje);
+    }
+  }
+
+  // 2. Generar archivo .DOCX y enviarlo por WhatsApp
+  Future<void> _generarYEnviarDocx() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _generandoDoc = true);
+
+    try {
+      final String nombreMat = widget.material['Nombre'] ?? 'N/A';
+      final String descMat = widget.material['Descripcion'] ?? 'N/A';
+      final String stockActual = widget.material['Cantidad_Actual'] ?? '0';
+      final String unidad = widget.material['Unidad_Medida'] ?? widget.material['Unidad'] ?? '';
+      final String historialTexto = _obtenerTextoUltimosMovimientos(nombreMat);
+      final String fechaHoy = DateTime.now().toString().split(' ')[0];
+
+      // Cargar plantilla desde assets
+      final ByteData data = await rootBundle.load('assets/plantilla_reporte.docx');
+      final bytes = data.buffer.asUint8List();
+      final docx = DocxTemplate.fromBytes(bytes);
+
+      // Mapear variables
+      final Content content = Content();
+      content.add(TextContent('fecha', fechaHoy));
+      content.add(TextContent('nombreMat', nombreMat));
+      content.add(TextContent('descMat', descMat));
+      content.add(TextContent('stockActual', stockActual));
+      content.add(TextContent('unidad', unidad));
+      content.add(TextContent('cantidadSolicitada', _cantidadSolicitadaCtrl.text.trim()));
+      content.add(TextContent('solicitante', _solicitanteCtrl.text.trim()));
+      content.add(TextContent('justificacion', _justificacionSeleccionada));
+      content.add(TextContent('historialTexto', historialTexto));
+
+      // Inyectar foto tomada si existe
+      if (_imagenAdjunta != null) {
+        final imageBytes = await File(_imagenAdjunta!.path).readAsBytes();
+        content.add(ImageContent('foto', imageBytes));
+      } else {
+        content.add(TextContent('foto', '[Sin Registro Fotográfico]'));
+      }
+
+      final generatedDoc = await docx.generate(content);
+
+      if (generatedDoc != null) {
+        final tempDir = await getTemporaryDirectory();
+        final nombreLimpio = nombreMat.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+        final file = File('${tempDir.path}/Reporte_Solicitud_$nombreLimpio.docx');
+        await file.writeAsBytes(generatedDoc);
+
+        if (mounted) Navigator.pop(context);
+
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          text: 'Solicitud de material: $nombreMat',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al generar archivo Word: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _generandoDoc = false);
     }
   }
 
@@ -1347,20 +1411,35 @@ _Generado desde el Sistema de Inventario_
                   ),
                 ),
               const SizedBox(height: 20),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
+              if (_generandoDoc)
+                const Center(child: CircularProgressIndicator())
+              else ...[
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _generarYEnviarInformeTexto,
+                  icon: const Icon(Icons.message),
+                  label: const Text('Enviar Texto a WhatsApp'),
                 ),
-                onPressed: _generarYEnviarInforme,
-                icon: const Icon(Icons.send),
-                label: const Text('Generar y Enviar por WhatsApp', style: TextStyle(fontSize: 16)),
-              ),
+                const SizedBox(height: 10),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade800,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _generarYEnviarDocx,
+                  icon: const Icon(Icons.description),
+                  label: const Text('Generar Documento Word (.docx)'),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
-}
+}}
