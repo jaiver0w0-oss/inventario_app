@@ -986,8 +986,16 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
     _stockActualCtrl = TextEditingController(text: (widget.material['Cantidad_Actual'] ?? '0').toString());
     _stockReqCtrl = TextEditingController(text: (widget.material['Cantidad_Requerida'] ?? '0').toString());
     
-    final unidadActual = widget.material['Unidad_Medida'] ?? widget.material['Unidad'] ?? 'Und';
-    _unidadSeleccionada = _opcionesUnidad.contains(unidadActual) ? unidadActual : _opcionesUnidad.first;
+    // 1. Obtener la unidad y limpiar espacios en blanco
+    final String unidadRaw = (widget.material['Unidad_Medida'] ?? widget.material['Unidad'] ?? '').toString().trim();
+
+    // 2. Buscar coincidencia exacta o insensible a mayúsculas/minúsculas
+    final String unidadEncontrada = _opcionesUnidad.firstWhere(
+      (u) => u.toLowerCase() == unidadRaw.toLowerCase(),
+      orElse: () => _opcionesUnidad.first,
+    );
+
+    _unidadSeleccionada = unidadEncontrada;
   }
 
   @override
