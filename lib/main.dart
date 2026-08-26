@@ -157,7 +157,10 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => FormularioInformeModal(material: material),
+      builder: (context) => FormularioInformeModal(
+        material: material,
+        listaMovimientos: _movimientos, // <-- Pasa la lista de movimientos aquí
+      ),
     );
   }
 
@@ -1126,8 +1129,13 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
 
 class FormularioInformeModal extends StatefulWidget {
   final Map<String, dynamic> material;
+  final List<Map<String, String>> listaMovimientos;
 
-  const FormularioInformeModal({super.key, required this.material});
+  const FormularioInformeModal({
+    super.key,
+    required this.material,
+    required this.listaMovimientos,
+  });
 
   @override
   State<FormularioInformeModal> createState() => _FormularioInformeModalState();
@@ -1137,9 +1145,22 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
   final _formKey = GlobalKey<FormState>();
   final _solicitanteCtrl = TextEditingController();
   final _cantidadSolicitadaCtrl = TextEditingController();
-  final _justificacionCtrl = TextEditingController();
 
+  // Lista de justificaciones por Acción Específica
+  final List<String> _opcionesJustificacion = [
+    'Código de Acción Específica N°001: Servicios del Cementerio (Inhumación, Exhumación, Cremación y Servicios de capilla)',
+    'Código de Acción Específica N°002: (Construcción de bóvedas, tapas, bases de cemento y cuñas)',
+    'Código de Acción Específica N°003: Mantenimiento General de áreas del Parque Cementerio Jardines del Orinoco',
+  ];
+
+  late String _justificacionSeleccionada;
   XFile? _imagenAdjunta;
+
+  @override
+  void initState() {
+    super.initState();
+    _justificacionSeleccionada = _opcionesJustificacion.first;
+  }
 
   Future<void> _seleccionarImagen(ImageSource origen) async {
     final picker = ImagePicker();
@@ -1151,6 +1172,31 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
     }
   }
 
+  // Filtrar los últimos 5 movimientos del material
+  String _obtenerTextoUltimosMovimientos(String nombreMaterial) {
+    final movsMaterial = widget.listaMovimientos.where((m) {
+      final matNombre = m['Material'] ?? '';
+      return matNombre.toLowerCase().trim() == nombreMaterial.toLowerCase().trim();
+    }).toList();
+
+    if (movsMaterial.isEmpty) {
+      return 'Sin movimientos registrados';
+    }
+
+    // Tomar los últimos 5 (los más recientes suelen estar al final del listado)
+    final ultimosMovs = movsMaterial.reversed.take(5).toList();
+    final StringBuffer sb = StringBuffer();
+
+    for (var m in ultimosMovs) {
+      final fecha = m['Fecha'] ?? '';
+      final tipo = m['Tipo'] ?? '';
+      final cant = m['Cantidad'] ?? '0';
+      sb.writeln('• [$fecha] $tipo: $cant');
+    }
+
+    return sb.toString().trim();
+  }
+
   void _generarYEnviarInforme() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -1158,8 +1204,9 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
     final descMat = widget.material['Descripcion'] ?? 'N/A';
     final stockActual = widget.material['Cantidad_Actual'] ?? '0';
     final unidad = widget.material['Unidad_Medida'] ?? widget.material['Unidad'] ?? '';
+    final historialTexto = _obtenerTextoUltimosMovimientos(nombreMat);
 
-    // Construcción del texto formateado para WhatsApp
+    // Construcción del informe para WhatsApp
     final String mensaje = '''
 📋 *SOLICITUD DE MATERIAL*
 ----------------------------------
@@ -1169,8 +1216,11 @@ class _FormularioInformeModalState extends State<FormularioInformeModal> {
 🔢 *Cantidad Solicitada:* ${_cantidadSolicitadaCtrl.text.trim()} $unidad
 
 👤 *Solicitante:* ${_solicitanteCtrl.text.trim()}
-📌 *Justificación / Uso:*
-${_justificacionCtrl.text.trim()}
+📌 *Justificación:*
+$_justificacionSeleccionada
+
+📜 *Últimos 5 Movimientos:*
+$historialTexto
 
 ----------------------------------
 _Generado desde el Sistema de Inventario_
@@ -1178,7 +1228,6 @@ _Generado desde el Sistema de Inventario_
 
     Navigator.pop(context);
 
-    // Envío del informe con o sin archivo adjunto
     if (_imagenAdjunta != null) {
       await Share.shareXFiles(
         [_imagenAdjunta!],
@@ -1193,7 +1242,6 @@ _Generado desde el Sistema de Inventario_
   void dispose() {
     _solicitanteCtrl.dispose();
     _cantidadSolicitadaCtrl.dispose();
-    _justificacionCtrl.dispose();
     super.dispose();
   }
 
@@ -1239,18 +1287,29 @@ _Generado desde el Sistema de Inventario_
                 validator: (v) => v == null || v.trim().isEmpty ? 'Ingrese la cantidad' : null,
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _justificacionCtrl,
-                maxLines: 3,
+              DropdownButtonFormField<String>(
+                value: _justificacionSeleccionada,
+                isExpanded: true,
                 decoration: const InputDecoration(
-                  labelText: 'Justificación / Motivo del requerimiento',
+                  labelText: 'Justificación / Código de Acción',
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Ingrese la justificación' : null,
+                items: _opcionesJustificacion.map((opcion) {
+                  return DropdownMenuItem(
+                    value: opcion,
+                    child: Text(
+                      opcion,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _justificacionSeleccionada = val);
+                },
               ),
               const SizedBox(height: 15),
-              
-              // Sección para adjuntar foto local
               Row(
                 children: [
                   Expanded(
@@ -1304,4 +1363,4 @@ _Generado desde el Sistema de Inventario_
       ),
     );
   }
-}
+}}
