@@ -48,7 +48,7 @@ class SheetsService {
     required String descripcion,
     required int cantidadActual,
     required int cantidadRequerida,
-    required String unidad, // <-- Parámetro agregado
+    required String unidad,
     String? imagenBase64,
   }) async {
     try {
@@ -101,8 +101,6 @@ class SheetsService {
     return false;
   }
 
-  // En lib/sheets_service.dart:
-
   Future<bool> editarMaterial({
     required String nombre,
     required String descripcion,
@@ -112,10 +110,10 @@ class SheetsService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse(baseUrl),
+        Uri.parse(scriptUrl),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
-          'action': 'editMaterial', // Acción que procesará Apps Script
+          'action': 'editMaterial',
           'nombre': nombre,
           'descripcion': descripcion,
           'cantidadActual': cantidadActual,
@@ -123,11 +121,15 @@ class SheetsService {
           'unidad': unidad,
         }),
       );
-      return response.statusCode == 200;
+
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        final res = json.decode(response.body);
+        return res['status'] == 'success';
+      }
     } catch (e) {
       print('Error al editar material: $e');
-      return false;
     }
+    return false;
   }
 
   Future<bool> registrarMovimiento({

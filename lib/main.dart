@@ -35,33 +35,77 @@ class PantallaPrincipal extends StatefulWidget {
 }
 
 class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTickerProviderStateMixin {
-  
-  final TextEditingController _busquedaCtrl = TextEditingController(); // Controller del Buscador
+  late TabController _tabController;
+  final SheetsService _sheetsService = SheetsService();
+
+  final TextEditingController _busquedaCtrl = TextEditingController();
   String _filtroBusqueda = '';
+
+  List<Map<String, String>> _materiales = [];
+  List<Map<String, String>> _movimientos = [];
+  List<Map<String, String>> _personal = [];
+  bool _cargando = true;
 
   @override
   void initState() {
     super.initState();
-    _cargarDatosCompletos();
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() => setState(() {}));
     
-    // Escuchar cambios en la barra de búsqueda
     _busquedaCtrl.addListener(() {
       setState(() {
         _filtroBusqueda = _busquedaCtrl.text.toLowerCase().trim();
       });
     });
+
+    _cargarDatosCompletos();
   }
 
   @override
   void dispose() {
     _busquedaCtrl.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
-  // Modificación del menú de opciones al tocar un material
+  Future<void> _cargarDatosCompletos() async {
+    setState(() => _cargando = true);
+    try {
+      final resultados = await Future.wait([
+        _sheetsService.obtenerMateriales(),
+        _sheetsService.obtenerMovimientos(),
+        _sheetsService.obtenerPersonal(),
+      ]);
+
+      setState(() {
+        _materiales = resultados[0];
+        _movimientos = resultados[1].reversed.toList();
+        _personal = resultados[2];
+        _cargando = false;
+      });
+    } catch (e) {
+      setState(() => _cargando = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar datos: $e')),
+        );
+      }
+    }
+  }
+
+  void _verMovimientosMaterial(Map<String, dynamic> material) {
+    final nombreMaterial = material['Nombre'] ?? '';
+    _mostrarMovimientosDelMaterial(nombreMaterial);
+  }
+
   void _opcionesMaterial(Map<String, dynamic> material) {
+    final nombreMaterial = material['Nombre'] ?? '';
+
     showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) => Container(
         padding: const EdgeInsets.all(16),
         child: Wrap(
@@ -71,7 +115,15 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
               title: const Text('Editar Valores'),
               onTap: () {
                 Navigator.pop(context);
-                _mostrarFormularioEditarMaterial(material); // Abre formulario de edición
+                _mostrarFormularioEditarMaterial(material);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera, color: Colors.teal),
+              title: const Text('Cambiar / Tomar Foto'),
+              onTap: () {
+                Navigator.pop(context);
+                _seleccionarYActualizarFoto(nombreMaterial);
               },
             ),
             ListTile(
@@ -79,7 +131,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
               title: const Text('Ver Movimientos'),
               onTap: () {
                 Navigator.pop(context);
-                // Tu función de ver movimientos existente
                 _verMovimientosMaterial(material);
               },
             ),
@@ -89,7 +140,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
     );
   }
 
-  // Función para desplegar la modal de edición
   void _mostrarFormularioEditarMaterial(Map<String, dynamic> material) {
     showModalBottomSheet(
       context: context,
@@ -128,198 +178,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
           }
         },
       ),
-    );
-  }
-
-  // Vista actualizada de la lista de materiales con Buscador incorporado
-  Widget _buildListaMateriales() {
-    // Filtrar la lista según la búsqueda realizada por el usuario
-    final materialesFiltrados = _materiales.where((item) {
-      final nombre = (item['Nombre'] ?? '').toString().toLowerCase();
-      final desc = (item['Descripcion'] ?? '').toString().toLowerCase();
-      return nombre.contains(_filtroBusqueda) || desc.contains(_filtroBusqueda);
-    }).toList();
-
-    return Column(
-      children: [
-        // Buscador superior
-        Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: TextField(
-            controller: _busquedaCtrl,
-            decoration: InputDecoration(
-              hintText: 'Buscar por nombre o descripción...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _filtroBusqueda.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () => _busquedaCtrl.clear(),
-                    )
-                  : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
-            ),
-          ),
-        ),
-
-        // Lista de materiales filtrada
-        Expanded(
-          child: materialesFiltrados.isEmpty
-              ? const Center(child: Text('No se encontraron materiales.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  itemCount: materialesFiltrados.length,
-                  itemBuilder: (context, index) {
-                    final item = materialesFiltrados[index];
-                    final stock = int.tryParse(item['Cantidad_Actual'] ?? '0') ?? 0;
-                    final requerida = item['Cantidad_Requerida'] ?? '0';
-                    final unidad = item['Unidad'] ?? '';
-                    final imagenUrl = item['Imagen_URL'] ?? '';
-
-                    return Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                      child: ListTile(
-                        onTap: () => _opcionesMaterial(item),
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: imagenUrl.isNotEmpty
-                              ? Image.network(
-                                  imagenUrl,
-                                  width: 50,
-                                  height: 50,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => _buildAvatarFallback(stock),
-                                )
-                              : _buildAvatarFallback(stock),
-                        ),
-                        title: Text(item['Nombre'] ?? 'Sin Nombre', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(item['Descripcion'] ?? 'Sin descripción'),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              'Stock: $stock ${unidad.isNotEmpty ? unidad : ''}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: stock <= 0 ? Colors.red : Colors.black,
-                              ),
-                            ),
-                            Text(
-                              'Req: $requerida ${unidad.isNotEmpty ? unidad : ''}',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAvatarFallback(int stock) {
-    return CircleAvatar(
-      backgroundColor: stock <= 0 ? Colors.red.shade100 : Colors.teal.shade100,
-      child: Icon(
-        Icons.inventory_2,
-        color: stock <= 0 ? Colors.red : Colors.teal.shade800,
-      ),
-    );
-  }
-
-  late TabController _tabController;
-  final SheetsService _sheetsService = SheetsService();
-
-  List<Map<String, String>> _materiales = [];
-  List<Map<String, String>> _movimientos = [];
-  List<Map<String, String>> _personal = [];
-  bool _cargando = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() => setState(() {}));
-    _cargarDatosCompletos();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _cargarDatosCompletos() async {
-    setState(() => _cargando = true);
-    try {
-      final resultados = await Future.wait([
-        _sheetsService.obtenerMateriales(),
-        _sheetsService.obtenerMovimientos(),
-        _sheetsService.obtenerPersonal(),
-      ]);
-
-      setState(() {
-        _materiales = resultados[0];
-        _movimientos = resultados[1].reversed.toList();
-        _personal = resultados[2];
-        _cargando = false;
-      });
-    } catch (e) {
-      setState(() => _cargando = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar datos: $e')),
-        );
-      }
-    }
-  }
-
-  void _opcionesMaterial(Map<String, String> item) {
-    final nombreMaterial = item['Nombre'] ?? '';
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                nombreMaterial,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 15),
-              ListTile(
-                leading: const Icon(Icons.photo_camera, color: Colors.teal),
-                title: const Text('Cambiar / Tomar Foto'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _seleccionarYActualizarFoto(nombreMaterial);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.history, color: Colors.blue),
-                title: const Text('Ver Historial de Movimientos'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _mostrarMovimientosDelMaterial(nombreMaterial);
-                },
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -376,42 +234,39 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
     }
   }
 
-  // En _PantallaPrincipalState:
+  void _mostrarFormularioMaterial() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => FormularioMaterialModal(
+        onGuardar: (nombre, desc, stockActual, stockReq, unidad, imagenBase64) async {
+          Navigator.pop(context);
+          setState(() => _cargando = true);
 
-void _mostrarFormularioMaterial() {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (context) => FormularioMaterialModal(
-      // Actualizamos la firma del callback agregando 'unidad'
-      onGuardar: (nombre, desc, stockActual, stockReq, unidad, imagenBase64) async {
-        Navigator.pop(context);
-        setState(() => _cargando = true);
+          bool exito = await _sheetsService.registrarMaterial(
+            nombre: nombre,
+            descripcion: desc,
+            cantidadActual: stockActual,
+            cantidadRequerida: stockReq,
+            unidad: unidad,
+            imagenBase64: imagenBase64,
+          );
 
-        bool exito = await _sheetsService.registrarMaterial(
-          nombre: nombre,
-          descripcion: desc,
-          cantidadActual: stockActual,
-          cantidadRequerida: stockReq,
-          unidad: unidad, // <-- Pasar aquí la unidad al servicio
-          imagenBase64: imagenBase64,
-        );
-
-        if (exito) {
-          await _cargarDatosCompletos();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Material guardado correctamente')),
-            );
+          if (exito) {
+            await _cargarDatosCompletos();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Material guardado correctamente')),
+              );
+            }
           }
-        }
-      },
-    ),
-  );
-}
+        },
+      ),
+    );
+  }
 
   void _mostrarFormularioMovimiento() {
     if (_materiales.isEmpty || _personal.isEmpty) {
@@ -530,125 +385,91 @@ void _mostrarFormularioMaterial() {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gestión de Inventario', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.teal.shade700,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _cargarDatosCompletos,
-            tooltip: 'Actualizar Datos',
-          )
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: const [
-            Tab(icon: Icon(Icons.inventory_2), text: 'Hoja 8'),
-            Tab(icon: Icon(Icons.history), text: 'Movimientos'),
-            Tab(icon: Icon(Icons.people), text: 'Personal'),
-          ],
-        ),
-      ),
-      body: _cargando
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildListaMateriales(),
-                _buildListaMovimientos(),
-                _buildListaPersonal(),
-              ],
-            ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: Wrap(
-        direction: Axis.vertical,
-        crossAxisAlignment: WrapCrossAlignment.end,
-        spacing: 12,
-        children: [
-          if (_tabController.index == 0)
-            FloatingActionButton.extended(
-              heroTag: 'btnMaterial',
-              onPressed: _mostrarFormularioMaterial,
-              backgroundColor: Colors.teal.shade900,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add_box),
-              label: const Text('Nuevo Material'),
-            ),
-          FloatingActionButton.extended(
-            heroTag: 'btnMovimiento',
-            onPressed: _mostrarFormularioMovimiento,
-            backgroundColor: Colors.teal.shade600,
-            foregroundColor: Colors.white,
-            icon: const Icon(Icons.swap_horiz),
-            label: const Text('Nuevo Movimiento'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // En _buildListaMateriales():
-
   Widget _buildListaMateriales() {
-    if (_materiales.isEmpty) return const Center(child: Text('No hay materiales registrados'));
+    final materialesFiltrados = _materiales.where((item) {
+      final nombre = (item['Nombre'] ?? '').toString().toLowerCase();
+      final desc = (item['Descripcion'] ?? '').toString().toLowerCase();
+      return nombre.contains(_filtroBusqueda) || desc.contains(_filtroBusqueda);
+    }).toList();
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(8),
-      itemCount: _materiales.length,
-      itemBuilder: (context, index) {
-        final item = _materiales[index];
-        final stock = int.tryParse(item['Cantidad_Actual'] ?? '0') ?? 0;
-        final requerida = item['Cantidad_Requerida'] ?? '0';
-        final unidad = item['Unidad'] ?? ''; // <-- Obtener valor de la unidad
-        final imagenUrl = item['Imagen_URL'] ?? '';
-
-        return Card(
-          elevation: 2,
-          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-          child: ListTile(
-            onTap: () => _opcionesMaterial(item),
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: imagenUrl.isNotEmpty
-                  ? Image.network(
-                      imagenUrl,
-                      width: 50,
-                      height: 50,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => _buildAvatarFallback(stock),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: TextField(
+            controller: _busquedaCtrl,
+            decoration: InputDecoration(
+              hintText: 'Buscar por nombre o descripción...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _filtroBusqueda.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () => _busquedaCtrl.clear(),
                     )
-                  : _buildAvatarFallback(stock),
-            ),
-            title: Text(item['Nombre'] ?? 'Sin Nombre', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(item['Descripcion'] ?? 'Sin descripción'),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  'Stock: $stock ${unidad.isNotEmpty ? unidad : ''}', // <-- Muestra la unidad junto al Stock
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: stock <= 0 ? Colors.red : Colors.black,
-                  ),
-                ),
-                Text(
-                  'Req: $requerida ${unidad.isNotEmpty ? unidad : ''}', // <-- Muestra la unidad junto al requerimiento
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
             ),
           ),
-        );
-      },
+        ),
+        Expanded(
+          child: materialesFiltrados.isEmpty
+              ? const Center(child: Text('No se encontraron materiales.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  itemCount: materialesFiltrados.length,
+                  itemBuilder: (context, index) {
+                    final item = materialesFiltrados[index];
+                    final stock = int.tryParse(item['Cantidad_Actual'] ?? '0') ?? 0;
+                    final requerida = item['Cantidad_Requerida'] ?? '0';
+                    final unidad = item['Unidad_Medida'] ?? item['Unidad'] ?? '';
+                    final imagenUrl = item['Imagen_URL'] ?? '';
+
+                    return Card(
+                      elevation: 2,
+                      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                      child: ListTile(
+                        onTap: () => _opcionesMaterial(item),
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: imagenUrl.isNotEmpty
+                              ? Image.network(
+                                  imagenUrl,
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => _buildAvatarFallback(stock),
+                                )
+                              : _buildAvatarFallback(stock),
+                        ),
+                        title: Text(item['Nombre'] ?? 'Sin Nombre', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(item['Descripcion'] ?? 'Sin descripción'),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'Stock: $stock ${unidad.isNotEmpty ? unidad : ''}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: stock <= 0 ? Colors.red : Colors.black,
+                              ),
+                            ),
+                            Text(
+                              'Req: $requerida ${unidad.isNotEmpty ? unidad : ''}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
@@ -722,10 +543,73 @@ void _mostrarFormularioMaterial() {
       },
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Gestión de Inventario', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.teal.shade700,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _cargarDatosCompletos,
+            tooltip: 'Actualizar Datos',
+          )
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(icon: Icon(Icons.inventory_2), text: 'Hoja 8'),
+            Tab(icon: Icon(Icons.history), text: 'Movimientos'),
+            Tab(icon: Icon(Icons.people), text: 'Personal'),
+          ],
+        ),
+      ),
+      body: _cargando
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildListaMateriales(),
+                _buildListaMovimientos(),
+                _buildListaPersonal(),
+              ],
+            ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: Wrap(
+        direction: Axis.vertical,
+        crossAxisAlignment: WrapCrossAlignment.end,
+        spacing: 12,
+        children: [
+          if (_tabController.index == 0)
+            FloatingActionButton.extended(
+              heroTag: 'btnMaterial',
+              onPressed: _mostrarFormularioMaterial,
+              backgroundColor: Colors.teal.shade900,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add_box),
+              label: const Text('Nuevo Material'),
+            ),
+          FloatingActionButton.extended(
+            heroTag: 'btnMovimiento',
+            onPressed: _mostrarFormularioMovimiento,
+            backgroundColor: Colors.teal.shade600,
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.swap_horiz),
+            label: const Text('Nuevo Movimiento'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class FormularioMaterialModal extends StatefulWidget {
-  // 1. Agregar 'String unidad' al callback onGuardar
   final Function(
     String nombre, 
     String descripcion, 
@@ -748,10 +632,8 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
   final _stockActualCtrl = TextEditingController(text: '0');
   final _stockReqCtrl = TextEditingController(text: '0');
 
-  // 2. Variable para almacenar la unidad seleccionada
-  String _unidadSeleccionada = 'Unidades';
+  String _unidadSeleccionada = 'Und';
 
-  // Lista de unidades comunes (puedes ajustar según tus necesidades)
   final List<String> _opcionesUnidad = [
     'Und',
     'Rollos',
@@ -863,8 +745,6 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
                 decoration: const InputDecoration(labelText: 'Descripción / Especificaciones', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 12),
-
-              // 3. Dropdown para seleccionar la unidad de medida
               DropdownButtonFormField<String>(
                 value: _unidadSeleccionada,
                 decoration: const InputDecoration(
@@ -879,7 +759,6 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
                 },
               ),
               const SizedBox(height: 12),
-
               Row(
                 children: [
                   Expanded(
@@ -915,7 +794,7 @@ class _FormularioMaterialModalState extends State<FormularioMaterialModal> {
                       _descCtrl.text.trim(),
                       int.parse(_stockActualCtrl.text),
                       int.parse(_stockReqCtrl.text),
-                      _unidadSeleccionada, // <-- Se pasa la unidad seleccionada
+                      _unidadSeleccionada,
                       _imagenBase64,
                     );
                   }
@@ -954,6 +833,13 @@ class _FormularioMovimientoModalState extends State<FormularioMovimientoModal> {
   String? _personaSeleccionada;
   final _cantidadController = TextEditingController();
   final _observacionController = TextEditingController();
+
+  @override
+  void dispose() {
+    _cantidadController.dispose();
+    _observacionController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1046,8 +932,6 @@ class _FormularioMovimientoModalState extends State<FormularioMovimientoModal> {
   }
 }
 
-// En lib/main.dart (al final del archivo):
-
 class FormularioEditarMaterialModal extends StatefulWidget {
   final Map<String, dynamic> material;
   final Function(
@@ -1077,13 +961,21 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
   late String _unidadSeleccionada;
 
   final List<String> _opcionesUnidad = [
-    'Unidades',
-    'Piezas',
+    'Und',
+    'Rollos',
+    'Caja',
+    'Pares',
+    'Laminas',
     'Sacos',
-    'Metros',
-    'Kilos',
-    'Cajas',
     'Litros',
+    'Galon',
+    'Atados',
+    'metros',
+    'm2',
+    'm3',
+    'Serv',
+    'Pza',
+    'Bolsa',
   ];
 
   @override
@@ -1094,7 +986,7 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
     _stockActualCtrl = TextEditingController(text: (widget.material['Cantidad_Actual'] ?? '0').toString());
     _stockReqCtrl = TextEditingController(text: (widget.material['Cantidad_Requerida'] ?? '0').toString());
     
-    final unidadActual = widget.material['Unidad'] ?? 'Unidades';
+    final unidadActual = widget.material['Unidad_Medida'] ?? widget.material['Unidad'] ?? 'Und';
     _unidadSeleccionada = _opcionesUnidad.contains(unidadActual) ? unidadActual : _opcionesUnidad.first;
   }
 
@@ -1125,8 +1017,6 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
             children: [
               const Text('Editar Material', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 15),
-              
-              // Campo Nombre (DESHABILITADO)
               TextFormField(
                 controller: _nombreCtrl,
                 enabled: false,
@@ -1137,15 +1027,11 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
                 ),
               ),
               const SizedBox(height: 12),
-
-              // Campo Descripción
               TextFormField(
                 controller: _descCtrl,
                 decoration: const InputDecoration(labelText: 'Descripción / Especificaciones', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 12),
-
-              // Dropdown Unidad
               DropdownButtonFormField<String>(
                 value: _unidadSeleccionada,
                 decoration: const InputDecoration(
@@ -1160,8 +1046,6 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
                 },
               ),
               const SizedBox(height: 12),
-
-              // Campos de Stock
               Row(
                 children: [
                   Expanded(
@@ -1184,7 +1068,6 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
                 ],
               ),
               const SizedBox(height: 20),
-
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal.shade800,
