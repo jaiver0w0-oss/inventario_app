@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'sheets_service.dart';
+
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1121,8 +1123,6 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
     );
   }
 }
-
-import 'package:share_plus/share_plus.dart';
 
 class FormularioInformeModal extends StatefulWidget {
   final Map<String, dynamic> material;
