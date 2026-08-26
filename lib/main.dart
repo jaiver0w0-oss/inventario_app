@@ -35,6 +35,205 @@ class PantallaPrincipal extends StatefulWidget {
 }
 
 class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTickerProviderStateMixin {
+  
+  final TextEditingController _busquedaCtrl = TextEditingController(); // Controller del Buscador
+  String _filtroBusqueda = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatosCompletos();
+    
+    // Escuchar cambios en la barra de búsqueda
+    _busquedaCtrl.addListener(() {
+      setState(() {
+        _filtroBusqueda = _busquedaCtrl.text.toLowerCase().trim();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
+  }
+
+  // Modificación del menú de opciones al tocar un material
+  void _opcionesMaterial(Map<String, dynamic> material) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit, color: Colors.teal),
+              title: const Text('Editar Valores'),
+              onTap: () {
+                Navigator.pop(context);
+                _mostrarFormularioEditarMaterial(material); // Abre formulario de edición
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.history, color: Colors.blue),
+              title: const Text('Ver Movimientos'),
+              onTap: () {
+                Navigator.pop(context);
+                // Tu función de ver movimientos existente
+                _verMovimientosMaterial(material);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Función para desplegar la modal de edición
+  void _mostrarFormularioEditarMaterial(Map<String, dynamic> material) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => FormularioEditarMaterialModal(
+        material: material,
+        onGuardar: (nombre, desc, stockActual, stockReq, unidad) async {
+          Navigator.pop(context);
+          setState(() => _cargando = true);
+
+          bool exito = await _sheetsService.editarMaterial(
+            nombre: nombre,
+            descripcion: desc,
+            cantidadActual: stockActual,
+            cantidadRequerida: stockReq,
+            unidad: unidad,
+          );
+
+          if (exito) {
+            await _cargarDatosCompletos();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Material actualizado correctamente')),
+              );
+            }
+          } else {
+            setState(() => _cargando = false);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Error al actualizar el material')),
+              );
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  // Vista actualizada de la lista de materiales con Buscador incorporado
+  Widget _buildListaMateriales() {
+    // Filtrar la lista según la búsqueda realizada por el usuario
+    final materialesFiltrados = _materiales.where((item) {
+      final nombre = (item['Nombre'] ?? '').toString().toLowerCase();
+      final desc = (item['Descripcion'] ?? '').toString().toLowerCase();
+      return nombre.contains(_filtroBusqueda) || desc.contains(_filtroBusqueda);
+    }).toList();
+
+    return Column(
+      children: [
+        // Buscador superior
+        Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: TextField(
+            controller: _busquedaCtrl,
+            decoration: InputDecoration(
+              hintText: 'Buscar por nombre o descripción...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _filtroBusqueda.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () => _busquedaCtrl.clear(),
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+            ),
+          ),
+        ),
+
+        // Lista de materiales filtrada
+        Expanded(
+          child: materialesFiltrados.isEmpty
+              ? const Center(child: Text('No se encontraron materiales.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  itemCount: materialesFiltrados.length,
+                  itemBuilder: (context, index) {
+                    final item = materialesFiltrados[index];
+                    final stock = int.tryParse(item['Cantidad_Actual'] ?? '0') ?? 0;
+                    final requerida = item['Cantidad_Requerida'] ?? '0';
+                    final unidad = item['Unidad'] ?? '';
+                    final imagenUrl = item['Imagen_URL'] ?? '';
+
+                    return Card(
+                      elevation: 2,
+                      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                      child: ListTile(
+                        onTap: () => _opcionesMaterial(item),
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: imagenUrl.isNotEmpty
+                              ? Image.network(
+                                  imagenUrl,
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => _buildAvatarFallback(stock),
+                                )
+                              : _buildAvatarFallback(stock),
+                        ),
+                        title: Text(item['Nombre'] ?? 'Sin Nombre', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(item['Descripcion'] ?? 'Sin descripción'),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'Stock: $stock ${unidad.isNotEmpty ? unidad : ''}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: stock <= 0 ? Colors.red : Colors.black,
+                              ),
+                            ),
+                            Text(
+                              'Req: $requerida ${unidad.isNotEmpty ? unidad : ''}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAvatarFallback(int stock) {
+    return CircleAvatar(
+      backgroundColor: stock <= 0 ? Colors.red.shade100 : Colors.teal.shade100,
+      child: Icon(
+        Icons.inventory_2,
+        color: stock <= 0 ? Colors.red : Colors.teal.shade800,
+      ),
+    );
+  }
+
   late TabController _tabController;
   final SheetsService _sheetsService = SheetsService();
 
@@ -838,6 +1037,172 @@ class _FormularioMovimientoModalState extends State<FormularioMovimientoModal> {
                   }
                 },
                 child: const Text('Guardar Registros', style: TextStyle(fontSize: 16)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// En lib/main.dart (al final del archivo):
+
+class FormularioEditarMaterialModal extends StatefulWidget {
+  final Map<String, dynamic> material;
+  final Function(
+    String nombre,
+    String descripcion,
+    int stockActual,
+    int stockRequerida,
+    String unidad,
+  ) onGuardar;
+
+  const FormularioEditarMaterialModal({
+    super.key,
+    required this.material,
+    required this.onGuardar,
+  });
+
+  @override
+  State<FormularioEditarMaterialModal> createState() => _FormularioEditarMaterialModalState();
+}
+
+class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterialModal> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nombreCtrl;
+  late TextEditingController _descCtrl;
+  late TextEditingController _stockActualCtrl;
+  late TextEditingController _stockReqCtrl;
+  late String _unidadSeleccionada;
+
+  final List<String> _opcionesUnidad = [
+    'Unidades',
+    'Piezas',
+    'Sacos',
+    'Metros',
+    'Kilos',
+    'Cajas',
+    'Litros',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _nombreCtrl = TextEditingController(text: widget.material['Nombre'] ?? '');
+    _descCtrl = TextEditingController(text: widget.material['Descripcion'] ?? '');
+    _stockActualCtrl = TextEditingController(text: (widget.material['Cantidad_Actual'] ?? '0').toString());
+    _stockReqCtrl = TextEditingController(text: (widget.material['Cantidad_Requerida'] ?? '0').toString());
+    
+    final unidadActual = widget.material['Unidad'] ?? 'Unidades';
+    _unidadSeleccionada = _opcionesUnidad.contains(unidadActual) ? unidadActual : _opcionesUnidad.first;
+  }
+
+  @override
+  void dispose() {
+    _nombreCtrl.dispose();
+    _descCtrl.dispose();
+    _stockActualCtrl.dispose();
+    _stockReqCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        top: 20,
+        left: 20,
+        right: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Editar Material', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 15),
+              
+              // Campo Nombre (DESHABILITADO)
+              TextFormField(
+                controller: _nombreCtrl,
+                enabled: false,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del Material (No editable)',
+                  border: OutlineInputBorder(),
+                  filled: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Campo Descripción
+              TextFormField(
+                controller: _descCtrl,
+                decoration: const InputDecoration(labelText: 'Descripción / Especificaciones', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+
+              // Dropdown Unidad
+              DropdownButtonFormField<String>(
+                value: _unidadSeleccionada,
+                decoration: const InputDecoration(
+                  labelText: 'Unidad de Medida',
+                  border: OutlineInputBorder(),
+                ),
+                items: _opcionesUnidad.map((u) {
+                  return DropdownMenuItem(value: u, child: Text(u));
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _unidadSeleccionada = val);
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // Campos de Stock
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _stockActualCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Stock Actual', border: OutlineInputBorder()),
+                      validator: (v) => v == null || int.tryParse(v) == null ? 'Inválido' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _stockReqCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Cantidad Requerida', border: OutlineInputBorder()),
+                      validator: (v) => v == null || int.tryParse(v) == null ? 'Inválido' : null,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal.shade800,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+                onPressed: () {
+                  if (_formKey.currentState!.validate()) {
+                    widget.onGuardar(
+                      _nombreCtrl.text.trim(),
+                      _descCtrl.text.trim(),
+                      int.parse(_stockActualCtrl.text),
+                      int.parse(_stockReqCtrl.text),
+                      _unidadSeleccionada,
+                    );
+                  }
+                },
+                child: const Text('Actualizar Material', style: TextStyle(fontSize: 16)),
               ),
             ],
           ),
