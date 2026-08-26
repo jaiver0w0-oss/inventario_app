@@ -111,6 +111,14 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
         child: Wrap(
           children: [
             ListTile(
+              leading: const Icon(Icons.description, color: Colors.green),
+              title: const Text('Crear Informe / Solicitud'),
+              onTap: () {
+                Navigator.pop(context);
+                _mostrarFormularioInforme(material);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.edit, color: Colors.teal),
               title: const Text('Editar Valores'),
               onTap: () {
@@ -137,6 +145,17 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> with SingleTicker
           ],
         ),
       ),
+    );
+  }
+
+  void _mostrarFormularioInforme(Map<String, dynamic> material) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => FormularioInformeModal(material: material),
     );
   }
 
@@ -1094,6 +1113,190 @@ class _FormularioEditarMaterialModalState extends State<FormularioEditarMaterial
                   }
                 },
                 child: const Text('Actualizar Material', style: TextStyle(fontSize: 16)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+import 'package:share_plus/share_plus.dart';
+
+class FormularioInformeModal extends StatefulWidget {
+  final Map<String, dynamic> material;
+
+  const FormularioInformeModal({super.key, required this.material});
+
+  @override
+  State<FormularioInformeModal> createState() => _FormularioInformeModalState();
+}
+
+class _FormularioInformeModalState extends State<FormularioInformeModal> {
+  final _formKey = GlobalKey<FormState>();
+  final _solicitanteCtrl = TextEditingController();
+  final _cantidadSolicitadaCtrl = TextEditingController();
+  final _justificacionCtrl = TextEditingController();
+
+  XFile? _imagenAdjunta;
+
+  Future<void> _seleccionarImagen(ImageSource origen) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: origen, imageQuality: 70);
+    if (pickedFile != null) {
+      setState(() {
+        _imagenAdjunta = pickedFile;
+      });
+    }
+  }
+
+  void _generarYEnviarInforme() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final nombreMat = widget.material['Nombre'] ?? 'N/A';
+    final descMat = widget.material['Descripcion'] ?? 'N/A';
+    final stockActual = widget.material['Cantidad_Actual'] ?? '0';
+    final unidad = widget.material['Unidad_Medida'] ?? widget.material['Unidad'] ?? '';
+
+    // Construcción del texto formateado para WhatsApp
+    final String mensaje = '''
+📋 *SOLICITUD DE MATERIAL*
+----------------------------------
+📦 *Material:* $nombreMat
+📝 *Especificación:* $descMat
+📊 *Stock Actual:* $stockActual $unidad
+🔢 *Cantidad Solicitada:* ${_cantidadSolicitadaCtrl.text.trim()} $unidad
+
+👤 *Solicitante:* ${_solicitanteCtrl.text.trim()}
+📌 *Justificación / Uso:*
+${_justificacionCtrl.text.trim()}
+
+----------------------------------
+_Generado desde el Sistema de Inventario_
+''';
+
+    Navigator.pop(context);
+
+    // Envío del informe con o sin archivo adjunto
+    if (_imagenAdjunta != null) {
+      await Share.shareXFiles(
+        [_imagenAdjunta!],
+        text: mensaje,
+      );
+    } else {
+      await Share.share(mensaje);
+    }
+  }
+
+  @override
+  void dispose() {
+    _solicitanteCtrl.dispose();
+    _cantidadSolicitadaCtrl.dispose();
+    _justificacionCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nombreMat = widget.material['Nombre'] ?? '';
+
+    return Padding(
+      padding: EdgeInsets.only(
+        top: 20,
+        left: 20,
+        right: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Informe de Solicitud: $nombreMat',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _solicitanteCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del Solicitante / Área',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Ingrese el solicitante' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _cantidadSolicitadaCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Cantidad a Solicitar',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Ingrese la cantidad' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _justificacionCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Justificación / Motivo del requerimiento',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Ingrese la justificación' : null,
+              ),
+              const SizedBox(height: 15),
+              
+              // Sección para adjuntar foto local
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _seleccionarImagen(ImageSource.camera),
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Tomar Foto'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _seleccionarImagen(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_library),
+                      label: const Text('Galería'),
+                    ),
+                  ),
+                ],
+              ),
+              if (_imagenAdjunta != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Imagen adjunta: ${_imagenAdjunta!.name}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+                onPressed: _generarYEnviarInforme,
+                icon: const Icon(Icons.send),
+                label: const Text('Generar y Enviar por WhatsApp', style: TextStyle(fontSize: 16)),
               ),
             ],
           ),
