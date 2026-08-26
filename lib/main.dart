@@ -1251,32 +1251,33 @@ _Generado desde el Sistema de Inventario_
       final String historialTexto = _obtenerTextoUltimosMovimientos(nombreMat);
       final String fechaHoy = DateTime.now().toString().split(' ')[0];
 
-      // Cargar plantilla desde assets
-      final ByteData data = await rootBundle.load('assets/plantilla_reporte.docx');
-      final bytes = data.buffer.asUint8List();
-      final docx = DocxTemplate.fromBytes(bytes);
+      // Cargar plantilla desde assets (AGREGAR AWAIT AQUÍ)
+  final ByteData data = await rootBundle.load('assets/plantilla_reporte.docx');
+  final bytes = data.buffer.asUint8List();
+  final docx = await DocxTemplate.fromBytes(bytes); // <-- Se agregó "await"
 
-      // Mapear variables
-      final Content content = Content();
-      content.add(TextContent('fecha', fechaHoy));
-      content.add(TextContent('nombreMat', nombreMat));
-      content.add(TextContent('descMat', descMat));
-      content.add(TextContent('stockActual', stockActual));
-      content.add(TextContent('unidad', unidad));
-      content.add(TextContent('cantidadSolicitada', _cantidadSolicitadaCtrl.text.trim()));
-      content.add(TextContent('solicitante', _solicitanteCtrl.text.trim()));
-      content.add(TextContent('justificacion', _justificacionSeleccionada));
-      content.add(TextContent('historialTexto', historialTexto));
+  // Mapear variables
+  final Content content = Content();
+  content.add(TextContent('fecha', fechaHoy));
+  content.add(TextContent('nombreMat', nombreMat));
+  content.add(TextContent('descMat', descMat));
+  content.add(TextContent('stockActual', stockActual));
+  content.add(TextContent('unidad', unidad));
+  content.add(TextContent('cantidadSolicitada', _cantidadSolicitadaCtrl.text.trim()));
+  content.add(TextContent('solicitante', _solicitanteCtrl.text.trim()));
+  content.add(TextContent('justificacion', _justificacionSeleccionada));
+  content.add(TextContent('historialTexto', historialTexto));
 
-      // Inyectar foto tomada si existe
-      if (_imagenAdjunta != null) {
-        final imageBytes = await File(_imagenAdjunta!.path).readAsBytes();
-        content.add(ImageContent('foto', imageBytes));
-      } else {
-        content.add(TextContent('foto', '[Sin Registro Fotográfico]'));
-      }
+  // Inyectar foto tomada si existe
+  if (_imagenAdjunta != null) {
+    final imageBytes = await File(_imagenAdjunta!.path).readAsBytes();
+    content.add(ImageContent('foto', imageBytes));
+  } else {
+    content.add(TextContent('foto', '[Sin Registro Fotográfico]'));
+  }
 
-      final generatedDoc = await docx.generate(content);
+  // Ahora docx.generate(content) funcionará correctamente
+  final generatedDoc = await docx.generate(content);
 
       if (generatedDoc != null) {
         final tempDir = await getTemporaryDirectory();
@@ -1442,4 +1443,4 @@ _Generado desde el Sistema de Inventario_
       ),
     );
   }
-}}
+}
