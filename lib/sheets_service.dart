@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class SheetsService {
-  static const String scriptUrl = 'https://script.google.com/macros/s/AKfycbxIBPis1nBMTfJ4KJrzKviVlRBzMZgFmdETdiLC_L8TxjVbiYJ17GSLDIDp24MpgHxw/exec';
+  static const String scriptUrl = 'https://script.google.com/macros/s/AKfycbxyCJpbBazGAkAZvwEtmZqDNvryl_swzI-ntMrPeZW8JGp_1CcRzkBHrs6kNRxUzgyX/exec';
 
   Future<List<Map<String, String>>> obtenerMateriales() async {
     try {
